@@ -18,39 +18,43 @@ BLUE = pygame.Color(0, 0, 255)
 
 
 class SnakeEnv(gym.Env):
+
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
+
+        self.frame_size = 200
+
+        self.game_window = pygame.display.set_mode((self.frame_size, self.frame_size))
+
         self.action_space = spaces.Discrete(4)
-        self.frame_size_x = 200
-        self.frame_size_y = 200
-        self.game_window = pygame.display.set_mode((self.frame_size_x, self.frame_size_y))
+        self.observation_space = spaces.Box(low=0, high=self.frame_size, shape=(4,1), dtype=np.float32)
 
-        self.observation_space = spaces.Box(low=np.zeros(self.frame_size_x),
-                                            high=np.ones(self.frame_size_y))
-
-        self.reset()
         self.STEP_LIMIT = 1000
         self.sleep = 0
 
     def step(self, action):
-        scoreholder = self.score
+
         reward = 0
         self.direction = SnakeEnv.change_direction(action, self.direction)
         self.snake_pos = SnakeEnv.move(self.direction, self.snake_pos)
         self.snake_body.insert(0, list(self.snake_pos))
 
-        reward = self.food_handler()
+        reward += self.food_handler()
 
         self.update_game_state()
 
-        reward, done = self.game_over(reward)
+        reward_added, done = self.game_over()
 
-        observation = self.observation_space
+        reward += reward_added
+        self.score += reward_added
+
+        observation = self.get_obs()
 
         info = {"score": self.score}
         self.steps += 1
         time.sleep(self.sleep)
+
         return observation, reward, done, info
 
     @staticmethod
@@ -81,8 +85,8 @@ class SnakeEnv(gym.Env):
         return self.snake_pos[0] == self.food_pos[0] and self.snake_pos[1] == self.food_pos[1]
 
     def spawn_food(self):
-        return [random.randrange(1, (self.frame_size_x // 10)) * 10,
-                random.randrange(1, (self.frame_size_y // 10)) * 10]
+        return [random.randrange(1, (self.frame_size // 10)) * 10,
+                random.randrange(1, (self.frame_size // 10)) * 10]
 
     def food_handler(self):
         if self.eat():
@@ -95,6 +99,7 @@ class SnakeEnv(gym.Env):
 
         if not self.food_spawn:
             self.food_pos = self.spawn_food()
+
         self.food_spawn = True
 
         return reward
@@ -106,15 +111,10 @@ class SnakeEnv(gym.Env):
 
         pygame.draw.rect(self.game_window, WHITE, pygame.Rect(self.food_pos[0], self.food_pos[1], 10, 10))
 
-    def get_image_array_from_game(self):
-        img = array3d(display.get_surface())
-        img = np.swapaxes(img, 0, 1)
-        return img
-
-    def game_over(self, reward):
-        if self.snake_pos[0] < 0 or self.snake_pos[0] > self.frame_size_x - 10:
+    def game_over(self):
+        if self.snake_pos[0] < 0 or self.snake_pos[0] > self.frame_size - 10:
             return -1, True
-        if self.snake_pos[1] < 0 or self.snake_pos[1] > self.frame_size_y - 10:
+        if self.snake_pos[1] < 0 or self.snake_pos[1] > self.frame_size - 10:
             return -1, True
 
         for block in self.snake_body[1:]:
@@ -123,9 +123,17 @@ class SnakeEnv(gym.Env):
         if self.steps >= 1000:
             return 0, True
 
-        return reward, False
+        return 0, False
+
+    def get_obs(self):
+
+        return np.array([
+            self.snake_pos,
+            self.food_pos
+        ],dtype=np.float32).reshape([4,1])
 
     def reset(self):
+
         self.game_window.fill(BLACK)
         self.snake_pos = [100, 50]
         self.snake_body = [[100, 50], [100 - 10, 50], [100 - (2 * 10), 50]]
@@ -137,10 +145,9 @@ class SnakeEnv(gym.Env):
         self.score = 0
         self.steps = 0
 
-        self.observation_space = spaces.Box(low=np.zeros(self.frame_size_x),
-                                            high=np.ones(self.frame_size_y))
+        observation_space = self.get_obs()
 
-        return self.observation_space
+        return observation_space
 
     def render(self, mode='human'):
         if mode == "human":
